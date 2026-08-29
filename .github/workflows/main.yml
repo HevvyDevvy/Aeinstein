@@ -1,0 +1,63 @@
+name: Deploy AEinstein to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find and unzip site archive
+        run: |
+          set -e
+          ZIP_FILE=$(find . -maxdepth 2 -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No .zip file found in the repo root (or one level deep)."
+            exit 1
+          fi
+          echo "Unzipping: $ZIP_FILE"
+          mkdir -p site
+          unzip -o "$ZIP_FILE" -d site
+
+          # If the zip contained a single wrapper folder (e.g. AEinstein/index.html),
+          # flatten it so index.html ends up at the site root.
+          ENTRIES=$(find site -mindepth 1 -maxdepth 1)
+          ENTRY_COUNT=$(echo "$ENTRIES" | wc -l)
+          if [ "$ENTRY_COUNT" -eq 1 ] && [ -d "$ENTRIES" ]; then
+            echo "Flattening wrapper folder: $ENTRIES"
+            shopt -s dotglob
+            mv "$ENTRIES"/* site/
+            rmdir "$ENTRIES"
+          fi
+
+          echo "Final site contents:"
+          find site -maxdepth 2
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site as artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
